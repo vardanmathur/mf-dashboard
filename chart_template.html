@@ -39,6 +39,7 @@
         #container, #mfChart, #mfSpreadChart { height: 500px; width: 100%; }
         .controls { margin: 6px 0 10px 0; }
         .highcharts-description { margin: 0.3rem 10px; }
+        .choices { margin-bottom: 2px; }
         select[multiple] { min-width: 350px; height: 2.5em; font-size: 15px; }
     </style>
 </head>
@@ -87,10 +88,7 @@
 
 <!-- TAB 3 -->
 <div id="spreadTab" class="tabcontent">
-    <div style="margin:5px 0 3px 10px; font-size:18px;">
-        MF spread over time (each column = 100% of portfolio; colors = funds)
-    </div>
-    <div style="margin:5px 0 5px 10px;">
+    <div style="margin:2px 0 5px 10px;">
         <label for="spreadDateSelect" style="font-size:16px;">Select dates to display:</label>
         <select id="spreadDateSelect" multiple style="font-size:14px; width:35%;"></select>
         <span style="font-size:10px; color:#999;">(Hold Ctrl/Cmd to multi-select)</span>
