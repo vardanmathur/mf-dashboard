@@ -36,7 +36,7 @@
         #mfTab.tabcontent     { background: #fffde7; }
         #spreadTab.tabcontent { background: #e8f5e9; }
         .tabcontent { display: none; border: 1px solid #ccc; border-top: none; padding: 0 0 25px 0; }
-        #container, #mfChart, #mfSpreadChart { height: 700px; width: 1500px; }
+        #container, #mfChart, #mfSpreadChart { height: 680px; width: 100%; }
         .controls { margin: 10px 0 24px 0; }
         .highcharts-description { margin: 0.3rem 10px; }
         select[multiple] { min-width: 350px; height: 2.5em; font-size: 15px; }
@@ -77,7 +77,7 @@
 <div id="mfTab" class="tabcontent">
     <div style="margin:10px 0;">
         <label for="mfSelect" style="font-size:18px;">Select Mutual Fund(s):</label>
-        <select id="mfSelect" multiple style="font-size:16px; width:500px">
+        <select id="mfSelect" multiple style="font-size:16px; width:40%">
             MF_DROPDOWN_OPTIONS_HTML
         </select>
         <span style="font-size:10px; color:#999;">(Hold Ctrl/Cmd to multi-select)</span>
@@ -92,7 +92,7 @@
     </div>
     <div style="margin:10px 0 10px 10px;">
         <label for="spreadDateSelect" style="font-size:16px;">Select dates to display:</label>
-        <select id="spreadDateSelect" multiple style="font-size:14px; width:400px;"></select>
+        <select id="spreadDateSelect" multiple style="font-size:14px; width:35%;"></select>
         <span style="font-size:10px; color:#999;">(Hold Ctrl/Cmd to multi-select)</span>
         <button id="spreadResetBtn"     style="margin-left:10px; font-size:12px; padding:4px 8px;">Reset selection</button>
         <button id="spreadSelectAllBtn" style="margin-left:6px;  font-size:12px; padding:4px 8px;">Select all</button>
@@ -410,6 +410,13 @@ function drawMFSpreadChart(selectedIndices) {
         series: filteredSeries
     });
 }
+
+// Reflow all charts on window resize
+window.addEventListener('resize', function() {
+    if (window._barChart)    window._barChart.reflow();
+    if (window._mfChart)     window._mfChart.reflow();
+    if (window._spreadChart) window._spreadChart.reflow();
+});
 </script>
 </body>
 </html>

@@ -201,4 +201,4 @@ with st.spinner("Building charts…"):
     chart_html = build_chart_html(df)
 
 # Render the Highcharts dashboard — height sized to fit 3 tabs + controls
-st.components.v1.html(chart_html, height=900, scrolling=False)
+st.components.v1.html(chart_html, height=820, scrolling=False)
