@@ -179,13 +179,11 @@ def sidebar_add_data():
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
-st.title("📈 MF Dashboard")
-
-col1, col2 = st.columns([6, 1])
-with col2:
-    if st.button("🔄 Refresh data"):
-        st.cache_data.clear()
-        st.rerun()
+st.markdown("""
+    <style>
+        .block-container { padding-top: 0.75rem; padding-bottom: 0; }
+    </style>
+""", unsafe_allow_html=True)
 
 sidebar_add_data()
 
@@ -195,10 +193,22 @@ if df.empty:
     st.warning("No data found in Google Sheet. Add data using the sidebar.")
     st.stop()
 
-st.caption(f"Loaded {len(df):,} rows · {df['date'].dt.strftime('%Y-%m-%d').nunique()} dates · {df['name'].nunique()} funds · Last updated: {df['date'].max().strftime('%d %b %Y')}")
+col1, col2 = st.columns([8, 1])
+with col1:
+    st.markdown(
+        f"#### 📈 MF Dashboard &nbsp; <small style='color:gray;font-size:0.75rem'>"
+        f"Loaded {len(df):,} rows · {df['date'].dt.strftime('%Y-%m-%d').nunique()} dates · "
+        f"{df['name'].nunique()} funds · Last updated: {df['date'].max().strftime('%d %b %Y')}"
+        f"</small>",
+        unsafe_allow_html=True,
+    )
+with col2:
+    if st.button("🔄 Refresh"):
+        st.cache_data.clear()
+        st.rerun()
 
 with st.spinner("Building charts…"):
     chart_html = build_chart_html(df)
 
 # Render the Highcharts dashboard — height sized to fit 3 tabs + controls
-st.components.v1.html(chart_html, height=820, scrolling=False)
+st.components.v1.html(chart_html, height=900, scrolling=False)
