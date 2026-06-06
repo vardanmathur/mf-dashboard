@@ -1,9 +1,8 @@
 import streamlit as st
 import pandas as pd
 import json
-import io
 from datetime import datetime
-from data_layer import load_data, append_rows, get_gsheet_client
+from data_layer import load_data, load_portfolio_growth
 
 st.set_page_config(page_title="MF Dashboard", layout="wide", page_icon="📈")
 
@@ -32,6 +31,10 @@ if not check_password():
 def get_data():
     return load_data()
 
+@st.cache_data(ttl=300, show_spinner="Loading portfolio growth data…")
+def get_portfolio_growth():
+    return load_portfolio_growth()
+
 
 # ── Build chart HTML ─────────────────────────────────────────────────────────
 
@@ -41,7 +44,7 @@ SPECIAL_BOTTOM_MFS = {
     "Kotak Liquid Fund Reg(G)", "Parag Parikh Liquid Fund Reg (G)",
 }
 
-def build_chart_html(df: pd.DataFrame) -> str:
+def build_chart_html(df: pd.DataFrame, df_growth: pd.DataFrame) -> str:
     unique_dates = sorted(df["date"].dt.strftime("%Y-%m-%d").unique())
     unique_mfs   = sorted(df["name"].unique())
 
@@ -100,6 +103,18 @@ def build_chart_html(df: pd.DataFrame) -> str:
             mf_spread_series.append({"name": mf, "data": pts, "color": color})
     mf_spread_series = mf_spread_series[::-1]
 
+    # Tab 4: Portfolio Growth
+    growth_rows = []
+    for _, row in df_growth.iterrows():
+        growth_rows.append({
+            "date":          row["date"].strftime("%Y-%m-%d"),
+            "stocks":        float(row["stocks"]),
+            "mfs":           float(row["mfs"]),
+            "total":         float(row["total"]),
+            "monthly_delta": float(row["monthly_delta"]),
+        })
+    js_portfolio_growth_json = json.dumps(growth_rows)
+
     # Default funds for Tab 2
     non_liquid = [m for m in df[df["date"] == df["date"].max()].sort_values("z", ascending=False)["name"].tolist()
                   if m not in SPECIAL_BOTTOM_MFS]
@@ -120,61 +135,10 @@ def build_chart_html(df: pd.DataFrame) -> str:
     html = html.replace("JS_MF_SPREAD_JSON",        json.dumps(mf_spread_series))
     html = html.replace("JS_MF_SPREAD_CATEGORIES",  json.dumps(spread_dates))
     html = html.replace("DEFAULT_FUNDS_JS",         default_funds_js)
+    html = html.replace("JS_PORTFOLIO_GROWTH_JSON", js_portfolio_growth_json)
     return html
 
 
-# ── Sidebar: add data ─────────────────────────────────────────────────────────
-
-REQUIRED_COLS = ["name", "y", "z", "color", "date", "spread_color"]
-
-def sidebar_add_data():
-    st.sidebar.header("➕ Add Data")
-
-    method = st.sidebar.radio("Method", ["Upload file (Excel/CSV)", "Paste CSV text"], label_visibility="collapsed")
-
-    new_df = None
-
-    if method == "Upload file (Excel/CSV)":
-        f = st.sidebar.file_uploader("Excel or CSV file", type=["xlsx","xls","csv"])
-        if f:
-            try:
-                new_df = pd.read_excel(f, parse_dates=["date"]) if f.name.endswith(("xlsx","xls")) \
-                         else pd.read_csv(f, parse_dates=["date"])
-            except Exception as e:
-                st.sidebar.error(f"Parse error: {e}")
-
-    else:  # paste
-        st.sidebar.caption("Paste CSV with columns: name, y, z, color, date, spread_color")
-        pasted = st.sidebar.text_area("CSV text", height=200, placeholder="name,y,z,color,date,spread_color\nHDFC flexicap,14.2,15.4,#EFAC85,2026-04-10,#EFAC85")
-        if pasted.strip():
-            try:
-                new_df = pd.read_csv(io.StringIO(pasted), parse_dates=["date"])
-            except Exception as e:
-                st.sidebar.error(f"Parse error: {e}")
-
-    if new_df is not None:
-        new_df.columns = [c.strip().lower() for c in new_df.columns]
-        missing = [c for c in ["name","y","z","date"] if c not in new_df.columns]
-        if missing:
-            st.sidebar.error(f"Missing columns: {missing}")
-            return
-        # Fill optional cols
-        for col in ["color","spread_color"]:
-            if col not in new_df.columns:
-                new_df[col] = "#CCCCCC"
-
-        st.sidebar.dataframe(new_df[REQUIRED_COLS].head(10), use_container_width=True)
-        st.sidebar.caption(f"{len(new_df)} rows to append")
-
-        if st.sidebar.button("✅ Append to Google Sheet", type="primary"):
-            with st.spinner("Appending…"):
-                try:
-                    n = append_rows(new_df[REQUIRED_COLS])
-                    st.sidebar.success(f"Appended {n} rows!")
-                    st.cache_data.clear()
-                    st.rerun()
-                except Exception as e:
-                    st.sidebar.error(f"Failed: {e}")
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -185,13 +149,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-sidebar_add_data()
+st.sidebar.caption(f"Data last refreshed: {datetime.now().strftime('%d %b %Y, %H:%M')}")
 
-df = get_data()
+df        = get_data()
+df_growth = get_portfolio_growth()
 
 if df.empty:
-    st.warning("No data found in Google Sheet. Add data using the sidebar.")
+    st.warning("No data found in Google Sheet.")
     st.stop()
+
+growth_range = (
+    f" · Growth: {df_growth['date'].min().strftime('%b %Y')} – {df_growth['date'].max().strftime('%b %Y')}"
+    if not df_growth.empty else ""
+)
 
 col1, col2 = st.columns([8, 1])
 with col1:
@@ -199,7 +169,7 @@ with col1:
         f"#### 📈 MF Dashboard &nbsp; <small style='color:gray;font-size:0.75rem'>"
         f"Loaded {len(df):,} rows · {df['date'].dt.strftime('%Y-%m-%d').nunique()} dates · "
         f"{df['name'].nunique()} funds · Last updated: {df['date'].max().strftime('%d %b %Y')}"
-        f"</small>",
+        f"{growth_range}</small>",
         unsafe_allow_html=True,
     )
 with col2:
@@ -208,7 +178,7 @@ with col2:
         st.rerun()
 
 with st.spinner("Building charts…"):
-    chart_html = build_chart_html(df)
+    chart_html = build_chart_html(df, df_growth)
 
 # Render the Highcharts dashboard — height sized to fit 3 tabs + controls
 st.components.v1.html(chart_html, height=680, scrolling=False)

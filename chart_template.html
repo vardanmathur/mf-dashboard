@@ -37,6 +37,7 @@
         #spreadTab.tabcontent { background: #e8f5e9; }
         .tabcontent { display: none; border: 1px solid #ccc; border-top: none; padding: 0; }
         #container, #mfChart, #mfSpreadChart { height: 500px; width: 100%; }
+        #growthTab.tabcontent { background: #fce4ec; }
         .controls { margin: 6px 0 10px 0; }
         .highcharts-description { margin: 0.3rem 10px; }
         .choices { margin-bottom: 2px; }
@@ -49,6 +50,7 @@
     <button class="tablink" onclick="openTab(event,'chartTab')" id="defaultTab">Bar Chart by Date</button>
     <button class="tablink" onclick="openTab(event,'mfTab')">XIRR Trend for MF</button>
     <button class="tablink" onclick="openTab(event,'spreadTab')">MF Spread (100% Stacked)</button>
+    <button class="tablink" onclick="openTab(event,'growthTab')">Portfolio Growth</button>
 </div>
 
 <!-- TAB 1 -->
@@ -87,7 +89,7 @@
 </div>
 
 <!-- TAB 3 -->
-<div id="spreadTab" class="tabcontent">
+<div id="spreadTab" class="tabcontent" style="background: #e8f5e9;">
     <div style="margin:2px 0 5px 10px;">
         <label for="spreadDateSelect" style="font-size:16px;">Select dates to display:</label>
         <select id="spreadDateSelect" multiple style="font-size:14px; width:35%;"></select>
@@ -99,6 +101,12 @@
     <div id="mfSpreadChart"></div>
 </div>
 
+<!-- TAB 4 -->
+<div id="growthTab" class="tabcontent" style="background: #fce4ec;">
+    <div id="portfolioValueChart"  style="height:420px; width:100%;"></div>
+    <div id="monthlyDeltaChart"    style="height:280px; width:100%;"></div>
+</div>
+
 
 <script>
 // ── Injected data ──────────────────────────────────────────────────────────
@@ -106,6 +114,7 @@ const rawChartDataDates  = JS_DATE_PERIODS_JSON;
 const mfTimeSeriesData   = JS_MF_TIMESERIES_JSON;
 const mfSpreadSeries     = JS_MF_SPREAD_JSON;
 const mfSpreadCategories = JS_MF_SPREAD_CATEGORIES;
+const portfolioGrowthData = JS_PORTFOLIO_GROWTH_JSON;
 // ──────────────────────────────────────────────────────────────────────────
 
 
@@ -121,6 +130,10 @@ function openTab(evt, tabName) {
     if (tabName === "chartTab"  && window._barChart)    window._barChart.reflow();
     if (tabName === "mfTab"     && window._mfChart)     window._mfChart.reflow();
     if (tabName === "spreadTab" && window._spreadChart) window._spreadChart.reflow();
+    if (tabName === "growthTab") {
+        if (window._growthValueChart) window._growthValueChart.reflow();
+        if (window._growthDeltaChart) window._growthDeltaChart.reflow();
+    }
 }
 
 
@@ -242,6 +255,9 @@ document.addEventListener("DOMContentLoaded", function () {
         const sel = Array.from(this.selectedOptions).map(o => parseInt(o.value, 10));
         drawMFSpreadChart(sel);
     });
+
+    // --- Tab 4 init ---
+    drawPortfolioGrowthChart();
 
     // Open Tab 1 last so it's visible and renders at full size immediately
     document.getElementById("defaultTab").click();
@@ -409,11 +425,110 @@ function drawMFSpreadChart(selectedIndices) {
     });
 }
 
+// ── Tab 4: Portfolio Growth ────────────────────────────────────────────────
+function drawPortfolioGrowthChart() {
+    if (!portfolioGrowthData || portfolioGrowthData.length === 0) {
+        document.getElementById("portfolioValueChart").innerHTML =
+            "<p style='padding:20px;color:#888;'>No portfolio growth data available.</p>";
+        return;
+    }
+
+    const mfsSeries    = portfolioGrowthData.map(r => [new Date(r.date).getTime(), r.mfs]);
+    const stocksSeries = portfolioGrowthData.map(r => [new Date(r.date).getTime(), r.stocks]);
+    const deltaSeries  = portfolioGrowthData.map(r => ({
+        x: new Date(r.date).getTime(),
+        y: r.monthly_delta,
+        color: r.monthly_delta >= 0 ? "#43a047" : "#e53935"
+    }));
+
+    // Chart 1 — Stacked area: MFs + Stocks
+    window._growthValueChart = Highcharts.chart("portfolioValueChart", {
+        chart: { type: "area", zoomType: "x", marginBottom: 10 },
+        title: { text: "Portfolio Value Over Time" },
+        xAxis: {
+            type: "datetime",
+            labels: { format: "{value:%b %Y}" }
+        },
+        yAxis: {
+            title: { text: "Value (₹)" },
+            labels: {
+                formatter: function() {
+                    return "₹" + Highcharts.numberFormat(this.value / 100000, 1) + "L";
+                }
+            }
+        },
+        tooltip: {
+            shared: true,
+            formatter: function() {
+                let total = 0;
+                let s = "<b>" + Highcharts.dateFormat("%b %Y", this.x) + "</b>";
+                this.points.forEach(p => {
+                    s += "<br/>" + p.series.name + ": <b>₹" +
+                         Highcharts.numberFormat(p.y / 100000, 2) + "L</b>";
+                    total += p.y;
+                });
+                s += "<br/><b>Total: ₹" + Highcharts.numberFormat(total / 100000, 2) + "L</b>";
+                return s;
+            }
+        },
+        plotOptions: {
+            area: {
+                stacking: "normal",
+                lineWidth: 1,
+                marker: { enabled: false }
+            }
+        },
+        series: [
+            { name: "Stocks", data: stocksSeries, color: "#43a047", fillOpacity: 0.7 },
+            { name: "MFs",    data: mfsSeries,    color: "#1976d2", fillOpacity: 0.7 }
+        ],
+        legend: { enabled: true },
+        credits: { enabled: false }
+    });
+
+    // Chart 2 — Monthly net change columns
+    window._growthDeltaChart = Highcharts.chart("monthlyDeltaChart", {
+        chart: { type: "column", zoomType: "x", marginTop: 10 },
+        title: { text: "Monthly Net Change" },
+        xAxis: {
+            type: "datetime",
+            labels: { format: "{value:%b %Y}" }
+        },
+        yAxis: {
+            title: { text: "Change (₹)" },
+            labels: {
+                formatter: function() {
+                    return "₹" + Highcharts.numberFormat(this.value / 100000, 1) + "L";
+                }
+            },
+            plotLines: [{ value: 0, color: "#333", width: 1 }]
+        },
+        tooltip: {
+            formatter: function() {
+                return "<b>" + Highcharts.dateFormat("%b %Y", this.x) + "</b><br/>" +
+                       "Net Change: <b>₹" + Highcharts.numberFormat(this.y / 100000, 2) + "L</b>";
+            }
+        },
+        plotOptions: {
+            column: { borderWidth: 0, pointPadding: 0.05, groupPadding: 0 }
+        },
+        series: [{
+            name: "Monthly Change",
+            data: deltaSeries,
+            colorByPoint: true
+        }],
+        legend: { enabled: false },
+        credits: { enabled: false }
+    });
+}
+
 // Reflow all charts on window resize
 window.addEventListener('resize', function() {
-    if (window._barChart)    window._barChart.reflow();
-    if (window._mfChart)     window._mfChart.reflow();
-    if (window._spreadChart) window._spreadChart.reflow();
+    if (window._barChart)        window._barChart.reflow();
+    if (window._mfChart)         window._mfChart.reflow();
+    if (window._spreadChart)     window._spreadChart.reflow();
+    if (window._growthValueChart) window._growthValueChart.reflow();
+    if (window._growthDeltaChart) window._growthDeltaChart.reflow();
 });
 </script>
 </body>

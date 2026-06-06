@@ -1,9 +1,10 @@
 """
-data_layer.py — Google Sheets read/write via gspread.
+data_layer.py — Google Sheets read via gspread.
 
-Sheet structure (one tab called "mf_data"):
-  Columns: name | y | z | color | date | spread_color
-  date stored as YYYY-MM-DD strings in the sheet.
+Sheet tabs:
+  mf_data:          name | y | z | color | date | spread_color
+  portfolio_growth: date | stocks | mfs | total | monthly_delta
+  All dates stored as YYYY-MM-DD strings in the sheet.
 """
 
 import streamlit as st
@@ -15,8 +16,10 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.readonly",
 ]
-SHEET_TAB = "mf_data"
-EXPECTED_COLS = ["name", "y", "z", "color", "date", "spread_color"]
+MF_DATA_TAB           = "mf_data"
+EXPECTED_COLS         = ["name", "y", "z", "color", "date", "spread_color"]
+PORTFOLIO_GROWTH_TAB  = "portfolio_growth"
+PORTFOLIO_GROWTH_COLS = ["date", "stocks", "mfs", "total", "monthly_delta"]
 
 
 @st.cache_resource
@@ -29,16 +32,14 @@ def get_gsheet_client():
     return gspread.authorize(creds)
 
 
-def _get_worksheet():
+def _get_spreadsheet():
     gc = get_gsheet_client()
-    sheet_url = st.secrets["google_sheets"]["url"]
-    sh = gc.open_by_url(sheet_url)
-    return sh.worksheet(SHEET_TAB)
+    return gc.open_by_url(st.secrets["google_sheets"]["url"])
 
 
 def load_data() -> pd.DataFrame:
-    """Load all rows from the Google Sheet into a DataFrame."""
-    ws = _get_worksheet()
+    """Load all rows from the mf_data sheet tab into a DataFrame."""
+    ws = _get_spreadsheet().worksheet(MF_DATA_TAB)
     records = ws.get_all_records(expected_headers=EXPECTED_COLS)
     if not records:
         return pd.DataFrame(columns=EXPECTED_COLS)
@@ -51,38 +52,24 @@ def load_data() -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
-def append_rows(new_df: pd.DataFrame) -> int:
-    """
-    Append rows to the Google Sheet.
-    Deduplicates on (name, date) — will not write rows that already exist.
-    Returns the number of rows actually written.
-    """
-    ws = _get_worksheet()
-
-    # Load existing (name, date) pairs to deduplicate
-    existing_raw = ws.get_all_records(expected_headers=EXPECTED_COLS)
-    existing_keys = set()
-    for row in existing_raw:
-        existing_keys.add((str(row["name"]).strip(), str(row["date"]).strip()))
-
-    rows_to_write = []
-    new_df = new_df.copy()
-    new_df["date"] = pd.to_datetime(new_df["date"]).dt.strftime("%Y-%m-%d")
-
-    for _, row in new_df.iterrows():
-        key = (str(row["name"]).strip(), str(row["date"]).strip())
-        if key in existing_keys:
-            continue
-        rows_to_write.append([
-            str(row["name"]),
-            float(row["y"]),
-            float(row["z"]),
-            str(row["color"]),
-            str(row["date"]),
-            str(row.get("spread_color", row["color"])),
-        ])
-
-    if rows_to_write:
-        ws.append_rows(rows_to_write, value_input_option="USER_ENTERED")
-
-    return len(rows_to_write)
+def load_portfolio_growth() -> pd.DataFrame:
+    # Requires Google Sheet tab "portfolio_growth" with headers: date | stocks | mfs | total | monthly_delta
+    ws = _get_spreadsheet().worksheet(PORTFOLIO_GROWTH_TAB)
+    values = ws.get_all_values()
+    if not values or len(values) < 2:
+        return pd.DataFrame(columns=PORTFOLIO_GROWTH_COLS)
+    headers = [h.strip().lower() for h in values[0]]
+    df = pd.DataFrame(values[1:], columns=headers)
+    df = df[[c for c in PORTFOLIO_GROWTH_COLS if c in df.columns]]
+    df["date"] = pd.to_datetime(df["date"], format="%b-%Y", errors="coerce")
+    for col in ["stocks", "mfs", "total", "monthly_delta"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.replace("₹", "", regex=False).str.replace(",", "", regex=False).str.strip()
+    df["stocks"]        = pd.to_numeric(df["stocks"],        errors="coerce").fillna(0)
+    df["mfs"]           = pd.to_numeric(df["mfs"],           errors="coerce").fillna(0)
+    df["total"]         = pd.to_numeric(df["total"],         errors="coerce")
+    df["monthly_delta"] = pd.to_numeric(df["monthly_delta"], errors="coerce").fillna(0)
+    df = df.dropna(subset=["date", "total"])
+    df = df[df["total"] > 0]
+    df = df.sort_values("date").reset_index(drop=True)
+    return df
