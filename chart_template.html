@@ -13,6 +13,7 @@
         recommended pattern when you need both chart() and stockChart() on one page.
     -->
     <script src="https://cdn.jsdelivr.net/npm/highcharts/highcharts.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highcharts/highcharts-more.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/highcharts/modules/variwide.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/highcharts/modules/stock.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/highcharts/modules/exporting.js"></script>
@@ -36,7 +37,7 @@
         #mfTab.tabcontent     { background: #fffde7; }
         #spreadTab.tabcontent { background: #e8f5e9; }
         .tabcontent { display: none; border: 1px solid #ccc; border-top: none; padding: 0; }
-        #container, #mfChart, #mfSpreadChart { height: 500px; width: 100%; }
+        #container, #mfChart, #mfSpreadChart { height: 740px; width: 100%; }
         #growthTab.tabcontent { background: #fce4ec; }
         .controls { margin: 6px 0 10px 0; }
         .highcharts-description { margin: 0.3rem 10px; }
@@ -102,9 +103,13 @@
 </div>
 
 <!-- TAB 4 -->
-<div id="growthTab" class="tabcontent" style="background: #fce4ec;">
-    <div id="portfolioValueChart"  style="height:420px; width:100%;"></div>
-    <div id="monthlyDeltaChart"    style="height:280px; width:100%;"></div>
+<div id="growthTab" class="tabcontent" style="background:#fce4ec;">
+    <div style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:auto auto; gap:8px; padding:8px;">
+        <div id="portfolioValueChart"  style="height:380px; width:100%;"></div>
+        <div id="monthlyDeltaChart"    style="height:380px; width:100%;"></div>
+        <div id="portfolioXirrChart"   style="height:380px; width:100%;"></div>
+        <div id="fundBoxChart"         style="height:380px; width:100%;"></div>
+    </div>
 </div>
 
 
@@ -115,6 +120,8 @@ const mfTimeSeriesData   = JS_MF_TIMESERIES_JSON;
 const mfSpreadSeries     = JS_MF_SPREAD_JSON;
 const mfSpreadCategories = JS_MF_SPREAD_CATEGORIES;
 const portfolioGrowthData = JS_PORTFOLIO_GROWTH_JSON;
+const portfolioXirrData   = JS_PORTFOLIO_XIRR_JSON;
+const fundBoxData         = JS_FUND_BOX_JSON;
 // ──────────────────────────────────────────────────────────────────────────
 
 
@@ -131,8 +138,13 @@ function openTab(evt, tabName) {
     if (tabName === "mfTab"     && window._mfChart)     window._mfChart.reflow();
     if (tabName === "spreadTab" && window._spreadChart) window._spreadChart.reflow();
     if (tabName === "growthTab") {
-        if (window._growthValueChart) window._growthValueChart.reflow();
-        if (window._growthDeltaChart) window._growthDeltaChart.reflow();
+        // Destroy and redraw all 4 growth charts on every tab open
+        // This is necessary because they were first drawn in a hidden container
+        if (window._growthValueChart) { window._growthValueChart.destroy(); window._growthValueChart = null; }
+        if (window._growthDeltaChart) { window._growthDeltaChart.destroy(); window._growthDeltaChart = null; }
+        if (window._portXirrChart)    { window._portXirrChart.destroy();    window._portXirrChart    = null; }
+        if (window._fundBoxChart)     { window._fundBoxChart.destroy();     window._fundBoxChart     = null; }
+        drawPortfolioGrowthChart();
     }
 }
 
@@ -255,9 +267,6 @@ document.addEventListener("DOMContentLoaded", function () {
         const sel = Array.from(this.selectedOptions).map(o => parseInt(o.value, 10));
         drawMFSpreadChart(sel);
     });
-
-    // --- Tab 4 init ---
-    drawPortfolioGrowthChart();
 
     // Open Tab 1 last so it's visible and renders at full size immediately
     document.getElementById("defaultTab").click();
@@ -441,85 +450,171 @@ function drawPortfolioGrowthChart() {
         color: r.monthly_delta >= 0 ? "#43a047" : "#e53935"
     }));
 
-    // Chart 1 — Stacked area: MFs + Stocks
+    // Chart 1 — Portfolio Value stacked area
     window._growthValueChart = Highcharts.chart("portfolioValueChart", {
-        chart: { type: "area", zoomType: "x", marginBottom: 10 },
-        title: { text: "Portfolio Value Over Time" },
-        xAxis: {
-            type: "datetime",
-            labels: { format: "{value:%b %Y}" }
-        },
+        chart: { type: "area", zoomType: "x", marginBottom: 30 },
+        title: { text: "Portfolio Value Over Time", style: { fontSize: "14px" } },
+        xAxis: { type: "datetime", labels: { format: "{value:%b %Y}", style: { fontSize: "11px" } } },
         yAxis: {
-            title: { text: "Value (₹)" },
-            labels: {
-                formatter: function() {
-                    return "₹" + Highcharts.numberFormat(this.value / 100000, 1) + "L";
-                }
-            }
+            title: { text: "Value (₹)", style: { fontSize: "11px" } },
+            labels: { formatter: function() { return "₹" + Highcharts.numberFormat(this.value/100000, 1) + "L"; } }
         },
         tooltip: {
             shared: true,
             formatter: function() {
-                let total = 0;
-                let s = "<b>" + Highcharts.dateFormat("%b %Y", this.x) + "</b>";
-                this.points.forEach(p => {
-                    s += "<br/>" + p.series.name + ": <b>₹" +
-                         Highcharts.numberFormat(p.y / 100000, 2) + "L</b>";
-                    total += p.y;
-                });
-                s += "<br/><b>Total: ₹" + Highcharts.numberFormat(total / 100000, 2) + "L</b>";
+                let total = 0, s = "<b>" + Highcharts.dateFormat("%b %Y", this.x) + "</b>";
+                this.points.forEach(p => { s += "<br/>" + p.series.name + ": <b>₹" + Highcharts.numberFormat(p.y/100000, 2) + "L</b>"; total += p.y; });
+                s += "<br/><b>Total: ₹" + Highcharts.numberFormat(total/100000, 2) + "L</b>";
                 return s;
             }
         },
-        plotOptions: {
-            area: {
-                stacking: "normal",
-                lineWidth: 1,
-                marker: { enabled: false }
-            }
-        },
+        plotOptions: { area: { stacking: "normal", lineWidth: 1, marker: { enabled: false } } },
         series: [
             { name: "Stocks", data: stocksSeries, color: "#43a047", fillOpacity: 0.7 },
             { name: "MFs",    data: mfsSeries,    color: "#1976d2", fillOpacity: 0.7 }
         ],
-        legend: { enabled: true },
+        legend: { enabled: true, itemStyle: { fontSize: "11px" } },
         credits: { enabled: false }
     });
 
-    // Chart 2 — Monthly net change columns
+    // Chart 2 — Monthly Net Change
     window._growthDeltaChart = Highcharts.chart("monthlyDeltaChart", {
-        chart: { type: "column", zoomType: "x", marginTop: 10 },
-        title: { text: "Monthly Net Change" },
-        xAxis: {
-            type: "datetime",
-            labels: { format: "{value:%b %Y}" }
-        },
+        chart: { type: "column", zoomType: "x", marginBottom: 30 },
+        title: { text: "Monthly Net Change", style: { fontSize: "14px" } },
+        xAxis: { type: "datetime", labels: { format: "{value:%b %Y}", style: { fontSize: "11px" } } },
         yAxis: {
-            title: { text: "Change (₹)" },
-            labels: {
-                formatter: function() {
-                    return "₹" + Highcharts.numberFormat(this.value / 100000, 1) + "L";
-                }
-            },
+            title: { text: "Change (₹)", style: { fontSize: "11px" } },
+            labels: { formatter: function() { return "₹" + Highcharts.numberFormat(this.value/100000, 1) + "L"; } },
             plotLines: [{ value: 0, color: "#333", width: 1 }]
         },
         tooltip: {
             formatter: function() {
-                return "<b>" + Highcharts.dateFormat("%b %Y", this.x) + "</b><br/>" +
-                       "Net Change: <b>₹" + Highcharts.numberFormat(this.y / 100000, 2) + "L</b>";
+                return "<b>" + Highcharts.dateFormat("%b %Y", this.x) + "</b><br/>Net Change: <b>₹" +
+                       Highcharts.numberFormat(this.y/100000, 2) + "L</b>";
             }
         },
-        plotOptions: {
-            column: { borderWidth: 0, pointPadding: 0.05, groupPadding: 0 }
-        },
-        series: [{
-            name: "Monthly Change",
-            data: deltaSeries,
-            colorByPoint: true
-        }],
+        plotOptions: { column: { borderWidth: 0, pointPadding: 0.05, groupPadding: 0 } },
+        series: [{ name: "Monthly Change", data: deltaSeries, colorByPoint: true }],
         legend: { enabled: false },
         credits: { enabled: false }
     });
+
+    // Chart 3 — Portfolio XIRR over time
+    if (portfolioXirrData && portfolioXirrData.length > 0) {
+        const xirrSeries = portfolioXirrData.map(r => [new Date(r.date).getTime(), r.xirr_pct]);
+        window._portXirrChart = Highcharts.chart("portfolioXirrChart", {
+            chart: { type: "line", zoomType: "x" },
+            title: { text: "Portfolio XIRR Over Time", style: { fontSize: "14px" } },
+            xAxis: { type: "datetime", labels: { format: "{value:%b %Y}", style: { fontSize: "11px" } } },
+            yAxis: {
+                title: { text: "XIRR (%)", style: { fontSize: "11px" } },
+                labels: { format: "{value:.1f}%" }
+            },
+            tooltip: {
+                formatter: function() {
+                    return "<b>" + Highcharts.dateFormat("%b %Y", this.x) + "</b><br/>Portfolio XIRR: <b>" +
+                           Highcharts.numberFormat(this.y, 2) + "%</b>";
+                }
+            },
+            series: [{
+                name: "Portfolio XIRR",
+                data: xirrSeries,
+                color: "#7b1fa2",
+                lineWidth: 2,
+                marker: { enabled: false }
+            }],
+            legend: { enabled: false },
+            credits: { enabled: false }
+        });
+    } else {
+        document.getElementById("portfolioXirrChart").innerHTML =
+            "<p style='padding:20px;color:#888;'>No portfolio XIRR data available.</p>";
+    }
+
+    // Chart 4 — Fund XIRR Boxplot (horizontal, inverted columnrange)
+    if (fundBoxData && fundBoxData.length > 0) {
+        try {
+            // Convert hex color to rgba for transparency (avoids 8-digit hex parsing issues)
+            function hexToRgba(hex, alpha) {
+                const h = hex.replace("#", "");
+                const r = parseInt(h.slice(0, 2), 16);
+                const g = parseInt(h.slice(2, 4), 16);
+                const b = parseInt(h.slice(4, 6), 16);
+                return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+            }
+
+            const categories  = fundBoxData.map(r => r.name);
+            const rangeSeries = fundBoxData.map((r, i) => ({
+                x:     i,
+                low:   r.min_xirr  !== null ? r.min_xirr  : r.current_xirr,
+                high:  r.max_xirr  !== null ? r.max_xirr  : r.current_xirr,
+                color: hexToRgba(r.color, 0.35)
+            }));
+            const dotSeries = fundBoxData.map((r, i) => ({
+                x: i, y: r.current_xirr, color: r.color, name: r.name
+            }));
+
+            window._fundBoxChart = Highcharts.chart("fundBoxChart", {
+                chart: { type: "columnrange", inverted: true },
+                title: { text: "Fund XIRR Range (Min / Current / Max)", style: { fontSize: "14px" } },
+                xAxis: {
+                    categories: categories,
+                    labels: {
+                        style: { fontSize: "10px" },
+                        formatter: function() {
+                            const s = this.value;
+                            return s.length > 22 ? s.substring(0, 20) + "…" : s;
+                        }
+                    }
+                },
+                yAxis: {
+                    title: { text: "XIRR (%)", style: { fontSize: "11px" } },
+                    labels: { format: "{value:.1f}%" }
+                },
+                tooltip: {
+                    formatter: function() {
+                        const d = fundBoxData[this.point.x];
+                        if (this.series.name === "Current XIRR") {
+                            return "<b>" + d.name + "</b><br/>Current: <b>" + Highcharts.numberFormat(d.current_xirr, 2) + "%</b>" +
+                                   (d.min_xirr !== null ? "<br/>Min: " + Highcharts.numberFormat(d.min_xirr, 2) + "%" : "") +
+                                   (d.max_xirr !== null ? "<br/>Max: " + Highcharts.numberFormat(d.max_xirr, 2) + "%" : "");
+                        }
+                        return "<b>" + d.name + "</b><br/>Range: <b>" +
+                               Highcharts.numberFormat(d.min_xirr, 2) + "% – " +
+                               Highcharts.numberFormat(d.max_xirr, 2) + "%</b>";
+                    }
+                },
+                plotOptions: {
+                    columnrange: { borderWidth: 0, pointPadding: 0.15, groupPadding: 0.1 }
+                },
+                series: [
+                    {
+                        name: "XIRR Range",
+                        type: "columnrange",
+                        data: rangeSeries,
+                        colorByPoint: true,
+                        showInLegend: false
+                    },
+                    {
+                        name: "Current XIRR",
+                        type: "scatter",
+                        data: dotSeries,
+                        colorByPoint: true,
+                        showInLegend: false,
+                        marker: { radius: 5, symbol: "circle", lineWidth: 1, lineColor: "#333" }
+                    }
+                ],
+                legend: { enabled: false },
+                credits: { enabled: false }
+            });
+        } catch (e) {
+            document.getElementById("fundBoxChart").innerHTML =
+                "<p style='padding:20px;color:red;font-size:12px;'><b>fundBoxChart error:</b> " + e.message + "</p>";
+        }
+    } else {
+        document.getElementById("fundBoxChart").innerHTML =
+            "<p style='padding:20px;color:#888;'>No fund XIRR box data available.</p>";
+    }
 }
 
 // Reflow all charts on window resize
@@ -529,6 +624,8 @@ window.addEventListener('resize', function() {
     if (window._spreadChart)     window._spreadChart.reflow();
     if (window._growthValueChart) window._growthValueChart.reflow();
     if (window._growthDeltaChart) window._growthDeltaChart.reflow();
+    if (window._portXirrChart)    window._portXirrChart.reflow();
+    if (window._fundBoxChart)     window._fundBoxChart.reflow();
 });
 </script>
 </body>

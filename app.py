@@ -3,7 +3,7 @@ import pandas as pd
 import json
 import base64
 from datetime import datetime
-from data_layer import load_data, load_portfolio_growth
+from data_layer import load_data, load_portfolio_growth, load_portfolio_xirr, load_fund_xirr_box
 
 st.set_page_config(page_title="MF Dashboard", layout="wide", page_icon="📈")
 
@@ -38,6 +38,14 @@ def get_data():
 def get_portfolio_growth():
     return load_portfolio_growth()
 
+@st.cache_data(ttl=300, show_spinner="Loading portfolio XIRR data…")
+def get_portfolio_xirr():
+    return load_portfolio_xirr()
+
+@st.cache_data(ttl=300, show_spinner="Loading fund XIRR box data…")
+def get_fund_xirr_box():
+    return load_fund_xirr_box()
+
 
 # ── Build chart HTML ─────────────────────────────────────────────────────────
 
@@ -47,7 +55,7 @@ SPECIAL_BOTTOM_MFS = {
     "Kotak Liquid Fund Reg(G)", "Parag Parikh Liquid Fund Reg (G)",
 }
 
-def build_chart_html(df: pd.DataFrame, df_growth: pd.DataFrame) -> str:
+def build_chart_html(df: pd.DataFrame, df_growth: pd.DataFrame, df_port_xirr: pd.DataFrame, df_fund_box: pd.DataFrame) -> str:
     unique_dates = sorted(df["date"].dt.strftime("%Y-%m-%d").unique())
     unique_mfs   = sorted(df["name"].unique())
 
@@ -118,6 +126,27 @@ def build_chart_html(df: pd.DataFrame, df_growth: pd.DataFrame) -> str:
         })
     js_portfolio_growth_json = json.dumps(growth_rows)
 
+    # Tab 4: Portfolio XIRR over time
+    port_xirr_rows = []
+    for _, row in df_port_xirr.iterrows():
+        port_xirr_rows.append({
+            "date": row["date"].strftime("%Y-%m-%d"),
+            "xirr_pct": float(row["xirr_pct"])
+        })
+    js_portfolio_xirr_json = json.dumps(port_xirr_rows)
+
+    # Tab 4: Fund XIRR boxplot
+    fund_box_rows = []
+    for _, row in df_fund_box.iterrows():
+        fund_box_rows.append({
+            "name":         str(row["name"]),
+            "min_xirr":     float(row["min_xirr"])     if pd.notna(row.get("min_xirr"))     else None,
+            "max_xirr":     float(row["max_xirr"])     if pd.notna(row.get("max_xirr"))     else None,
+            "current_xirr": float(row["current_xirr"]) if pd.notna(row.get("current_xirr")) else None,
+            "color":        str(row["color"])
+        })
+    js_fund_box_json = json.dumps(fund_box_rows)
+
     # Default funds for Tab 2
     non_liquid = [m for m in df[df["date"] == df["date"].max()].sort_values("z", ascending=False)["name"].tolist()
                   if m not in SPECIAL_BOTTOM_MFS]
@@ -139,6 +168,8 @@ def build_chart_html(df: pd.DataFrame, df_growth: pd.DataFrame) -> str:
     html = html.replace("JS_MF_SPREAD_CATEGORIES",  json.dumps(spread_dates))
     html = html.replace("DEFAULT_FUNDS_JS",         default_funds_js)
     html = html.replace("JS_PORTFOLIO_GROWTH_JSON", js_portfolio_growth_json)
+    html = html.replace("JS_PORTFOLIO_XIRR_JSON",   js_portfolio_xirr_json)
+    html = html.replace("JS_FUND_BOX_JSON",          js_fund_box_json)
     return html
 
 
@@ -178,9 +209,12 @@ with col2:
         st.cache_data.clear()
         st.rerun()
 
+df_port_xirr = get_portfolio_xirr()
+df_fund_box  = get_fund_xirr_box()
+
 with st.spinner("Building charts…"):
-    chart_html = build_chart_html(df, df_growth)
+    chart_html = build_chart_html(df, df_growth, df_port_xirr, df_fund_box)
 
 b64 = base64.b64encode(chart_html.encode("utf-8")).decode("utf-8")
 data_uri = f"data:text/html;base64,{b64}"
-st.iframe(data_uri, height=820)
+st.iframe(data_uri, height=860)

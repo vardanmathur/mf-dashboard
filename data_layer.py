@@ -20,6 +20,10 @@ MF_DATA_TAB           = "mf_data"
 EXPECTED_COLS         = ["name", "y", "z", "color", "date", "spread_color"]
 PORTFOLIO_GROWTH_TAB  = "portfolio_growth"
 PORTFOLIO_GROWTH_COLS = ["date", "stocks", "mfs", "total", "monthly_delta"]
+PORTFOLIO_XIRR_TAB    = "portfolio_xirr"
+PORTFOLIO_XIRR_COLS   = ["date", "xirr_pct"]
+FUND_XIRR_BOX_TAB     = "fund_xirr_box"
+FUND_XIRR_BOX_COLS    = ["name", "min_xirr", "max_xirr", "current_xirr", "color"]
 
 
 @st.cache_resource
@@ -72,4 +76,39 @@ def load_portfolio_growth() -> pd.DataFrame:
     df = df.dropna(subset=["date", "total"])
     df = df[df["total"] > 0]
     df = df.sort_values("date").reset_index(drop=True)
+    return df
+
+
+def load_portfolio_xirr() -> pd.DataFrame:
+    # Requires Google Sheet tab "portfolio_xirr" with headers: date | xirr_pct
+    ws = _get_spreadsheet().worksheet(PORTFOLIO_XIRR_TAB)
+    values = ws.get_all_values()
+    if not values or len(values) < 2:
+        return pd.DataFrame(columns=PORTFOLIO_XIRR_COLS)
+    headers = [h.strip().lower() for h in values[0]]
+    df = pd.DataFrame(values[1:], columns=headers)
+    df = df[[c for c in PORTFOLIO_XIRR_COLS if c in df.columns]]
+    df["date"] = pd.to_datetime(df["date"], format="%d-%b-%y", errors="coerce")
+    df["xirr_pct"] = df["xirr_pct"].astype(str).str.replace("%", "", regex=False).str.replace(",", "", regex=False).str.strip()
+    df["xirr_pct"] = pd.to_numeric(df["xirr_pct"], errors="coerce")
+    df = df.dropna(subset=["date", "xirr_pct"])
+    df = df.sort_values("date").reset_index(drop=True)
+    return df
+
+
+def load_fund_xirr_box() -> pd.DataFrame:
+    # Requires Google Sheet tab "fund_xirr_box" with headers: name | min_xirr | max_xirr | current_xirr | color
+    ws = _get_spreadsheet().worksheet(FUND_XIRR_BOX_TAB)
+    values = ws.get_all_values()
+    if not values or len(values) < 2:
+        return pd.DataFrame(columns=FUND_XIRR_BOX_COLS)
+    headers = [h.strip().lower() for h in values[0]]
+    df = pd.DataFrame(values[1:], columns=headers)
+    df = df[[c for c in FUND_XIRR_BOX_COLS if c in df.columns]]
+    for col in ["min_xirr", "max_xirr", "current_xirr"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.replace("%", "", regex=False).str.replace(",", "", regex=False).str.strip()
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df.dropna(subset=["name", "current_xirr"])
+    df = df.sort_values("current_xirr", ascending=False).reset_index(drop=True)
     return df
