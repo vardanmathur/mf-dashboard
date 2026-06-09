@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import json
+import base64
 from datetime import datetime
 from data_layer import load_data, load_portfolio_growth
 
@@ -12,13 +13,15 @@ def check_password():
     if st.session_state.get("authenticated"):
         return True
     st.title("📈 MF Dashboard")
-    pwd = st.text_input("Password", type="password", key="pwd_input")
-    if st.button("Login"):
-        if pwd == st.secrets["app"]["password"]:
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.error("Wrong password.")
+    with st.form("login_form"):
+        pwd = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Login")
+        if submitted:
+            if pwd == st.secrets["app"]["password"]:
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.error("Wrong password.")
     return False
 
 if not check_password():
@@ -149,8 +152,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.sidebar.caption(f"Data last refreshed: {datetime.now().strftime('%d %b %Y, %H:%M')}")
-
 df        = get_data()
 df_growth = get_portfolio_growth()
 
@@ -169,7 +170,7 @@ with col1:
         f"#### 📈 MF Dashboard &nbsp; <small style='color:gray;font-size:0.75rem'>"
         f"Loaded {len(df):,} rows · {df['date'].dt.strftime('%Y-%m-%d').nunique()} dates · "
         f"{df['name'].nunique()} funds · Last updated: {df['date'].max().strftime('%d %b %Y')}"
-        f"{growth_range}</small>",
+        f"{growth_range} · Refreshed: {datetime.now().strftime('%d %b %Y, %H:%M')}</small>",
         unsafe_allow_html=True,
     )
 with col2:
@@ -180,5 +181,6 @@ with col2:
 with st.spinner("Building charts…"):
     chart_html = build_chart_html(df, df_growth)
 
-# Render the Highcharts dashboard — height sized to fit 3 tabs + controls
-st.components.v1.html(chart_html, height=680, scrolling=False)
+b64 = base64.b64encode(chart_html.encode("utf-8")).decode("utf-8")
+data_uri = f"data:text/html;base64,{b64}"
+st.iframe(data_uri, height=820)
